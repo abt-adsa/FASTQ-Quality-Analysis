@@ -9,7 +9,7 @@ import numpy as np
 import os
 
 
-def analyze_fastq(filename, label=""):
+def analyze_fastq(filename):
     """Analyze a FASTQ file and return statistics"""
 
     if not os.path.exists(filename):
@@ -19,15 +19,15 @@ def analyze_fastq(filename, label=""):
     read_lengths = []
     quality_scores = []
 
-    print(f"Analyzing {filename} ({label})...")
+    print(f"Analyzing {filename}...")
 
     # Parse with error handling
     count = 0
-    max_reads = 75000
+    max_reads = 100000
 
     try:
         for record in SeqIO.parse(filename, "fastq"):
-            if len(record.seq) > 0:
+            if len(record.seq) > 0:  # Skip empty reads
                 read_lengths.append(len(record.seq))
                 quality_scores.append(
                     np.mean(record.letter_annotations["phred_quality"])
@@ -42,115 +42,68 @@ def analyze_fastq(filename, label=""):
                 break
 
     except Exception as e:
-        print(f"Warning: Error processing {filename}: {e}")
+        print(f"Warning: Error processing file: {e}")
         if len(read_lengths) == 0:
             return None
 
     return read_lengths, quality_scores
 
 
-# Analyze both R1 and R2
-fastq_r1 = "SRR562646_1.fastq"
-fastq_r2 = "SRR562646_2.fastq"
+# Main analysis
+fastq_file = "SRR562646_1.fastq"
+result = analyze_fastq(fastq_file)
 
-print("=== PAIRED-END ANALYSIS ===")
-result_r1 = analyze_fastq(fastq_r1, "R1 - Forward reads")
-result_r2 = analyze_fastq(fastq_r2, "R2 - Reverse reads")
-
-if result_r1 is None or result_r2 is None:
+if result is None:
     print("Analysis failed!")
     exit(1)
 
-r1_lengths, r1_quality = result_r1
-r2_lengths, r2_quality = result_r2
+read_lengths, quality_scores = result
 
-# Compare statistics
-print(f"\n=== COMPARISON RESULTS ===")
-print(f"R1 reads processed: {len(r1_lengths):,}")
-print(f"R2 reads processed: {len(r2_lengths):,}")
+# Statistics
+print(f"\n=== RESULTS ===")
+print(f"Reads processed: {len(read_lengths):,}")
+print(f"Read length: {np.mean(read_lengths):.1f} ± {np.std(read_lengths):.1f} bp")
+print(f"Quality score: {np.mean(quality_scores):.1f} ± {np.std(quality_scores):.1f}")
 
-print(f"\nRead Lengths:")
-print(f"  R1: {np.mean(r1_lengths):.1f} ± {np.std(r1_lengths):.1f} bp")
-print(f"  R2: {np.mean(r2_lengths):.1f} ± {np.std(r2_lengths):.1f} bp")
-
-print(f"\nQuality Scores:")
-print(f"  R1: {np.mean(r1_quality):.1f} ± {np.std(r1_quality):.1f}")
-print(f"  R2: {np.mean(r2_quality):.1f} ± {np.std(r2_quality):.1f}")
-
-# Quality classification for both
-r1_class = (
+# Quality classification
+avg_qual = np.mean(quality_scores)
+quality_class = (
     "Excellent (Q30+)"
-    if np.mean(r1_quality) >= 30
-    else "Good (Q20+)" if np.mean(r1_quality) >= 20 else "Poor"
+    if avg_qual >= 30
+    else "Good (Q20+)" if avg_qual >= 20 else "Poor"
 )
-r2_class = (
-    "Excellent (Q30+)"
-    if np.mean(r2_quality) >= 30
-    else "Good (Q20+)" if np.mean(r2_quality) >= 20 else "Poor"
-)
+print(f"Overall quality: {quality_class}")
 
-print(f"\nQuality Assessment:")
-print(f"  R1: {r1_class}")
-print(f"  R2: {r2_class}")
-
-# Visualization - Compare R1 vs R2
+# Visualization
 sns.set_theme(style="whitegrid")
-fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+fig, axes = plt.subplots(1, 2, figsize=(15, 6))
 
-# R1 Read lengths
-sns.histplot(r1_lengths, bins=25, kde=True, color="skyblue", ax=axes[0, 0])
-axes[0, 0].set_title("R1 Read Length Distribution")
-axes[0, 0].set_xlabel("Length (bp)")
-axes[0, 0].axvline(
-    np.mean(r1_lengths),
+# Read lengths
+sns.histplot(read_lengths, bins=30, kde=True, color="skyblue", ax=axes[0])
+axes[0].set_title("Read Length Distribution")
+axes[0].set_xlabel("Length (bp)")
+axes[0].axvline(
+    np.mean(read_lengths),
     color="red",
     linestyle="--",
-    label=f"Mean: {np.mean(r1_lengths):.0f} bp",
+    label=f"Mean: {np.mean(read_lengths):.0f} bp",
 )
-axes[0, 0].legend()
+axes[0].legend()
 
-# R2 Read lengths
-sns.histplot(r2_lengths, bins=25, kde=True, color="lightcoral", ax=axes[0, 1])
-axes[0, 1].set_title("R2 Read Length Distribution")
-axes[0, 1].set_xlabel("Length (bp)")
-axes[0, 1].axvline(
-    np.mean(r2_lengths),
+# Quality scores
+sns.histplot(quality_scores, bins=30, kde=True, color="lightgreen", ax=axes[1])
+axes[1].set_title("Quality Score Distribution")
+axes[1].set_xlabel("Average Quality (Phred)")
+axes[1].axvline(
+    np.mean(quality_scores),
     color="red",
     linestyle="--",
-    label=f"Mean: {np.mean(r2_lengths):.0f} bp",
+    label=f"Mean: {np.mean(quality_scores):.1f}",
 )
-axes[0, 1].legend()
-
-# R1 Quality scores
-sns.histplot(r1_quality, bins=25, kde=True, color="lightgreen", ax=axes[1, 0])
-axes[1, 0].set_title("R1 Quality Score Distribution")
-axes[1, 0].set_xlabel("Average Quality (Phred)")
-axes[1, 0].axvline(
-    np.mean(r1_quality),
-    color="red",
-    linestyle="--",
-    label=f"Mean: {np.mean(r1_quality):.1f}",
-)
-axes[1, 0].axvline(30, color="orange", linestyle=":", label="Q30")
-axes[1, 0].legend()
-
-# R2 Quality scores
-sns.histplot(r2_quality, bins=25, kde=True, color="gold", ax=axes[1, 1])
-axes[1, 1].set_title("R2 Quality Score Distribution")
-axes[1, 1].set_xlabel("Average Quality (Phred)")
-axes[1, 1].axvline(
-    np.mean(r2_quality),
-    color="red",
-    linestyle="--",
-    label=f"Mean: {np.mean(r2_quality):.1f}",
-)
-axes[1, 1].axvline(30, color="orange", linestyle=":", label="Q30")
-axes[1, 1].legend()
+axes[1].axvline(30, color="orange", linestyle=":", label="Q30 threshold")
+axes[1].legend()
 
 plt.tight_layout()
-plt.savefig("paired_end_comparison.png", dpi=300, bbox_inches="tight")
-print("\nSaved: paired_end_comparison.png")
+plt.savefig("fastq_analysis.png", dpi=300, bbox_inches="tight")
+print("Saved: fastq_analysis.png")
 plt.show()
-
-print("\nNote: R1 and R2 are independent reads from paired-end sequencing")
-print("Each provides complete quality information for analysis")
